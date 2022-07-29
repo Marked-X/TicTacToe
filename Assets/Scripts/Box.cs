@@ -15,7 +15,7 @@ public class Box : MonoBehaviour
 
     public void WasClicked()
     {
-        if (!IsEmpty)
+        if (!IsEmpty || GameManager.Instance.IsGameOver || GameManager.Instance.IsTakingTurn)
             return;
         IsEmpty = false;
 

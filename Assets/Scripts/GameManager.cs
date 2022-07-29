@@ -13,19 +13,33 @@ public class GameManager : MonoBehaviour
     [SerializeField]
     private GameObject fieldObject = null;
     [SerializeField]
-    private GameObject GameModeDropdown = null;
+    private GameObject gameModeDropdown = null;
     [SerializeField]
-    private GameObject GameSizeSlider = null;
+    private GameObject gameSizeSlider = null;
     [SerializeField]
-    private GameObject GameSizeLabel = null;
+    private GameObject gameSizeLabel = null;
+    [SerializeField]
+    private GameObject turnLabel = null;
+    [SerializeField]
+    private GameObject victoryLabel = null;
+    [SerializeField]
+    private GameObject computerTurn = null;
+    [SerializeField]
+    private GameObject computerTurnToggle = null;
 
-    public bool FirstPlayerTurn { get; set; } = true;
+    public bool FirstPlayerTurn { get; private set; }
+    public bool IsTakingTurn { get; set; } = false;
+    public bool IsGameOver { get; set; } = true;
+    public int GameMode { get; set; } = 0;
 
-    private int fieldSize = 3;
+    public int fieldSize = 3;
+    public HashSet<HashSet<int>> winningSets = null;
+
     private GameObject[] field;
-    private HashSet<HashSet<int>> winningSets = null;
     private HashSet<int> firstPlayerSet = null;
     private HashSet<int> secondPlayerSet = null;
+    private Computer computerFirstPlayer = null;
+    private Computer computerSecondPlayer = null;
 
 
     private HashSet<HashSet<int>> winningSetsSizeThree = new HashSet<HashSet<int>>()
@@ -69,7 +83,6 @@ public class GameManager : MonoBehaviour
     };
 
 
-
     private void Awake()
     {
         Instance = this;
@@ -77,12 +90,13 @@ public class GameManager : MonoBehaviour
 
     void Start()
     {
+        computerSecondPlayer = new Computer();
         NewGame();
     }
 
     public void SliderValueChange()
     {
-        GameSizeLabel.GetComponent<TextMeshProUGUI>().text = "Game Size : " + GameSizeSlider.GetComponent<Slider>().value;
+        gameSizeLabel.GetComponent<TextMeshProUGUI>().text = "Game Size : " + gameSizeSlider.GetComponent<Slider>().value;
     }
 
     public void NewGame()
@@ -93,7 +107,7 @@ public class GameManager : MonoBehaviour
         }
 
         GridLayoutGroup fieldLayout = fieldObject.GetComponent<GridLayoutGroup>();
-        fieldSize = (int)GameSizeSlider.GetComponent<Slider>().value;
+        fieldSize = (int)gameSizeSlider.GetComponent<Slider>().value;      
 
         fieldLayout.constraintCount = fieldSize;
         switch (fieldSize)
@@ -112,6 +126,37 @@ public class GameManager : MonoBehaviour
                 break;
         }
 
+        switch (gameModeDropdown.GetComponent<TMP_Dropdown>().value)
+        {
+            case 0:
+                computerFirstPlayer = null;
+                computerSecondPlayer = null;
+                GameMode = 0;
+                break;
+            case 1:
+                if (computerTurnToggle.GetComponent<Toggle>().isOn)
+                {
+                    computerSecondPlayer = new Computer();
+                    computerSecondPlayer.Initialize(winningSets);
+                    computerFirstPlayer = null;
+                }
+                else
+                {
+                    computerFirstPlayer = new Computer();
+                    computerFirstPlayer.Initialize(winningSets);
+                    computerSecondPlayer = null;
+                }
+                GameMode = 1;
+                break;
+            case 2:
+                computerFirstPlayer = new Computer();
+                computerSecondPlayer = new Computer();
+                computerFirstPlayer.Initialize(winningSets);
+                computerSecondPlayer.Initialize(winningSets);
+                GameMode = 2;
+                break;
+        }
+
         field = new GameObject[fieldSize * fieldSize];
 
         for (int i = 0; i < fieldSize * fieldSize; i++)
@@ -120,33 +165,86 @@ public class GameManager : MonoBehaviour
             field[i].GetComponent<Box>().id = i;
         }
 
+        IsGameOver = false;
         FirstPlayerTurn = true;
+        turnLabel.GetComponent<TextMeshProUGUI>().text = "First Player Turn";
+        victoryLabel.SetActive(false);
         firstPlayerSet = new HashSet<int>();
         secondPlayerSet = new HashSet<int>();
+
+        SetAllSets();
+
+        if (GameMode == 2 || (GameMode == 1 && computerFirstPlayer != null))
+        {
+            StartCoroutine(computerFirstPlayer.TakeATurn());
+        }
     }
 
     public void BoxClicked(int id)
     {
+        if (IsGameOver || IsTakingTurn)
+            return;
+
         if (FirstPlayerTurn)
         {
             firstPlayerSet.Add(id);
+            if (computerSecondPlayer != null)
+                computerSecondPlayer.UpdatePotentialSets(id);
         }
         else
         {
             secondPlayerSet.Add(id);
+            if (computerFirstPlayer != null)
+                computerFirstPlayer.UpdatePotentialSets(id);
         }
 
         if (WinCheck())
         {
-            //victory stuff
             string temp = FirstPlayerTurn ? "First" : "Second";
-            Debug.Log("Victory " + temp);
+            Victory(temp);
             return;
         }
-        else
+        else if (!EmptySpaceCheck())
         {
-            FirstPlayerTurn = !FirstPlayerTurn;
+            Draw();
+            return;
         }
+
+        NextTurn();
+    }
+
+    private void NextTurn()
+    {
+        FirstPlayerTurn = !FirstPlayerTurn;
+
+        if (FirstPlayerTurn)
+            turnLabel.GetComponent<TextMeshProUGUI>().text = "First Player Turn";
+        else
+            turnLabel.GetComponent<TextMeshProUGUI>().text = "Second Player Turn";
+
+        if (GameMode != 0)
+        {
+            if (FirstPlayerTurn && computerFirstPlayer != null)
+            {
+                IsTakingTurn = true;
+                StartCoroutine(computerFirstPlayer.TakeATurn());
+            }
+            else if (!FirstPlayerTurn && computerSecondPlayer != null)
+            {
+                IsTakingTurn = true;
+                StartCoroutine(computerSecondPlayer.TakeATurn());
+            }
+        }
+    }
+
+    private bool EmptySpaceCheck()
+    {
+        foreach(GameObject box in field)
+        {
+            if (box.GetComponent<Box>().IsEmpty)
+                return true;
+        }
+        return false;
     }
 
     private bool WinCheck()
@@ -165,5 +263,46 @@ public class GameManager : MonoBehaviour
                 return true;
         }
         return false;
+    }
+
+    private void Victory(string player)
+    {
+        IsGameOver = true;
+        victoryLabel.GetComponentInChildren<TextMeshProUGUI>().text = player + " Player Won!";
+        victoryLabel.SetActive(true);
+    }
+
+    private void Draw()
+    {
+        IsGameOver = true;
+        victoryLabel.GetComponentInChildren<TextMeshProUGUI>().text = "Draw!";
+        victoryLabel.SetActive(true);
+    }
+
+    public void DropdownValueChange()
+    {
+        if (gameModeDropdown.GetComponent<TMP_Dropdown>().value == 1)
+            computerTurn.SetActive(true);
+        else
+            computerTurn.SetActive(false);
+    }
+
+    public void SetAllSets()
+    {
+        if (computerFirstPlayer != null)
+        {
+            computerFirstPlayer.ownSet = firstPlayerSet;
+            computerFirstPlayer.opponentsSet = secondPlayerSet;
+        }
+        if (computerSecondPlayer != null)
+        {
+            computerSecondPlayer.ownSet = secondPlayerSet;
+            computerSecondPlayer.opponentsSet = firstPlayerSet;
+        }
+    }
+
+    public void ClickBox(int id)
+    {
+        field[id].GetComponent<Box>().WasClicked();
     }
 }
