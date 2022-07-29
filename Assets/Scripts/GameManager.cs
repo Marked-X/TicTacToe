@@ -94,6 +94,14 @@ public class GameManager : MonoBehaviour
         NewGame();
     }
 
+    private void Update()
+    {
+        if (Input.GetKey(KeyCode.Escape))
+        {
+            Application.Quit();
+        }
+    }
+
     public void SliderValueChange()
     {
         gameSizeLabel.GetComponent<TextMeshProUGUI>().text = "Game Size : " + gameSizeSlider.GetComponent<Slider>().value;
